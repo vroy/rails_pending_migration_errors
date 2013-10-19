@@ -15,30 +15,50 @@ module RailsPendingMigrationErrors
     end
 
     def call(env)
-      ActiveRecord::Base.logger.quietly do
-        check_pending_migrations!
+      status, headers, response = @app.call(env)
+      response_body = nil
+
+      return [status, headers, response] unless html_request?(headers, response)
+
+      if RailsPendingMigrationErrors.needs_migrations?
+        if RailsPendingMigrationErrors.page_load
+          raise ActiveRecord::PendingMigrationError
+
+        else
+          response_body = append_response_body(headers, response)
+
+        end
       end
 
-      @app.call(env)
+      [status, headers, response_body ? [response_body] : response]
     end
 
     private
 
-    def check_pending_migrations!
-      raise ActiveRecord::PendingMigrationError if needs_migrations?
+    def append_response_body(headers, response)
+      response_body = response_body(response)
+      response_body << "<div #{footer_div_style}>Migrations are pending; run 'bin/rake db:migrate RAILS_ENV=#{::Rails.env}' to resolve this issue.</div>"
+      headers['Content-Length'] = response_body.bytesize.to_s
+      response_body
     end
 
-    def needs_migrations?
-      (file_versions - db_versions).size > 0
+    def html_request?(headers, response)
+      headers['Content-Type'] && headers['Content-Type'].include?('text/html') && response_body(response).include?("<html")
     end
 
-    def file_versions
-      ActiveRecord::Migrator.migrations( ActiveRecord::Migrator.migrations_paths ).map(&:version)
+    def response_body(response)
+      Array === response.body ? response.body.first : response.body
     end
 
-    def db_versions
-      ActiveRecord::Migrator.get_all_versions
+    def footer_div_style
+<<EOF
+style="position: fixed; bottom: 0; left: 0; cursor: pointer;
+       border-style: solid; border-color: red; border-width: 2px 2px 0 0;
+       padding: 6px; background: #FFB7B1; border-top-right-radius: 10px;
+       color: red; font-weight: bold; font-size: 18px; z-index: 100000;"
+EOF
     end
+
 
   end
 end
