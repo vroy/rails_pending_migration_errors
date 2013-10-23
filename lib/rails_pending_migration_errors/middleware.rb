@@ -18,7 +18,7 @@ module RailsPendingMigrationErrors
       status, headers, response = @app.call(env)
       response_body = nil
 
-      return [status, headers, response] unless html_request?(headers, response)
+      return [status, headers, response] if status != 200 or !html_request?(headers, response)
 
       if RailsPendingMigrationErrors.needs_migrations?
         if RailsPendingMigrationErrors.page_load
@@ -47,7 +47,13 @@ module RailsPendingMigrationErrors
     end
 
     def response_body(response)
-      Array === response.body ? response.body.first : response.body
+      if Array === response
+        response.first
+      elsif Array === response.body
+        response.body.first
+      else
+        response.body
+      end
     end
 
     def footer_div_style
